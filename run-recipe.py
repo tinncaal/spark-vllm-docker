@@ -15,6 +15,7 @@ Usage:
     ./run-recipe.py glm-4.7-flash-awq --port 9000 --solo
     ./run-recipe.py minimax-m2-awq --setup  # Full setup: build + download + run
     ./run-recipe.py --list
+    ./run-recipe.py --deployed
 
 ================================================================================
 ARCHITECTURE OVERVIEW (for developers extending this script)
@@ -23,7 +24,7 @@ ARCHITECTURE OVERVIEW (for developers extending this script)
 DEPLOYMENT PIPELINE:
     ┌─────────────────────────────────────────────────────────────────────────────┐
     │  CLI Args  →  Load Recipe  →  Resolve Nodes  →  Build  →  Download  →  Run  │
-    └─────────────────────────────────────────────────────────────────────────┘
+    └─────────────────────────────────────────────────────────────────────────────┘
 
 KEY ABSTRACTIONS:
     - Recipe (YAML): Declarative model configuration (see load_recipe docstring)
@@ -312,6 +313,84 @@ def list_recipes() -> None:
             print()
         except Exception as e:
             print(f"  {recipe_path.name} (error loading: {e})")
+            print()
+
+
+def list_deployed_models() -> None:
+    """
+    List all models that have been downloaded and are in the HuggingFace cache.
+
+    Scans the HuggingFace cache directory for downloaded models and displays
+    which ones are fully downloaded (have snapshots directory with content).
+
+    EXTENSIBILITY:
+    - To show additional info: Add model size, download date, etc.
+    - To support different cache locations: Add environment variable overrides
+    - To support different output formats: Add a format parameter
+    """
+    cache_home = os.path.expandvars(os.path.expanduser(os.environ.get(
+        "HF_HOME", os.path.join(os.environ.get("XDG_CACHE_HOME", "~/.cache"), "huggingface")
+    )))
+    hub_path = os.path.expandvars(os.path.expanduser(os.environ.get(
+        "HF_HUB_CACHE", os.environ.get("HUGGINGFACE_HUB_CACHE", os.path.join(cache_home, "hub"))
+    )))
+
+    if not hub_path:
+        print("Could not determine HuggingFace cache location.")
+        return
+
+    cache_path = Path(hub_path)
+
+    if not cache_path.exists():
+        print(f"No HuggingFace cache found at: {cache_path}")
+        return
+
+    # Look for models--* directories
+    model_dirs = sorted(cache_path.glob("models--*"))
+
+    if not model_dirs:
+        print(f"No downloaded models found in: {cache_path}")
+        return
+
+    print("Deployed models (in HuggingFace cache):\n")
+
+    for model_dir in model_dirs:
+        # Convert directory name back to model ID
+        # e.g., "models--Salyut1--GLM-4.7-NVFP4" -> "Salyut1/GLM-4.7-NVFP4"
+        cache_name = model_dir.name
+        if cache_name.startswith("models--"):
+            model_id = cache_name[8:].replace("--", "/")
+        else:
+            model_id = cache_name
+
+        # Check if model is fully downloaded (has snapshots with content)
+        snapshots = model_dir / "snapshots"
+        is_complete = snapshots.exists() and any(snapshots.iterdir())
+
+        if is_complete:
+            print(f"  {model_id}")
+            # Show cache directory path for reference
+            print(f"    Path: {model_dir}")
+            # Try to show model size
+            try:
+                total_size = 0
+                for f in model_dir.rglob("*"):
+                    if f.is_file():
+                        total_size += f.stat().st_size
+                # Display in GB if >= 1024 MB, otherwise MB
+                size_mb = total_size / (1024 * 1024)
+                if size_mb >= 1024:
+                    size_gb = size_mb / 1024
+                    print(f"    Size: {size_gb:.2f} GB")
+                else:
+                    print(f"    Size: {size_mb:.2f} MB")
+            except OSError:
+                pass
+            print()
+        else:
+            # Partially downloaded model
+            print(f"  {model_id} (incomplete)")
+            print(f"    Path: {model_dir}")
             print()
 
 
@@ -756,6 +835,12 @@ Examples:
 
   # Show current .env configuration
   %(prog)s --show-env
+
+  # List already downloaded models
+  %(prog)s --deployed
+
+  # Clean up model cache
+  %(prog)s gemma4-26b-a4b-nvfp4 --cleanup
         """,
     )
 
@@ -766,6 +851,9 @@ Examples:
     )
     parser.add_argument(
         "--list", "-l", action="store_true", help="List available recipes"
+    )
+    parser.add_argument(
+        "--deployed", action="store_true", help="List already downloaded models"
     )
 
     # Setup options
@@ -792,6 +880,11 @@ Examples:
         "--force-download",
         action="store_true",
         help="Force re-download even if model exists",
+    )
+    setup_group.add_argument(
+        "--cleanup",
+        action="store_true",
+        help="Clean up: remove downloaded model cache",
     )
 
     parser.add_argument(
@@ -1058,6 +1151,10 @@ Examples:
         list_recipes()
         return 0
 
+    if args.deployed:
+        list_deployed_models()
+        return 0
+
     if not args.recipe:
         parser.print_help()
         return 1
@@ -1149,8 +1246,8 @@ Examples:
         print(f"This model is too large to run on a single node.")
         print()
         print("Options:")
-        print(f"  1. Auto-discover and save:  {sys.argv[0]} --discover")
-        print(f"     Then run:                {sys.argv[0]} {args.recipe}")
+        print(f"  1. Auto-detect and save:  {sys.argv[0]} --discover")
+        print(f"     Then run:              {sys.argv[0]} {args.recipe}")
         print(
             "  2. If autodiscovery cannot support the topology, specify nodes as instructed."
         )
@@ -1324,6 +1421,56 @@ Examples:
         if args.download_only:
             print("Download complete." if not args.dry_run else "")
             return 0
+
+    # --- Cleanup Phase ---
+    if args.cleanup:
+        if args.dry_run:
+            print("=== Cleanup (Dry Run) ===")
+            if model:
+                model_exists = check_model_exists(model)
+                if model_exists:
+                    print(f"Would remove model cache: {model}")
+                else:
+                    print(f"Model cache not found: {model}")
+            else:
+                print("No model specified in recipe")
+            print()
+        else:
+            print("=== Cleanup ===")
+            cleanup_performed = False
+
+            # Clean up model cache
+            if model:
+                model_exists = check_model_exists(model)
+                if model_exists:
+                    cache_name = f"models--{model.replace('/', '--')}"
+                    cache_home = os.path.expandvars(os.path.expanduser(os.environ.get(
+                        "HF_HOME", os.path.join(os.environ.get("XDG_CACHE_HOME", "~/.cache"), "huggingface")
+                    )))
+                    hub_path = os.path.expandvars(os.path.expanduser(os.environ.get(
+                        "HF_HUB_CACHE", os.environ.get("HUGGINGFACE_HUB_CACHE", os.path.join(cache_home, "hub"))
+                    )))
+                    cache_path = Path(hub_path) / cache_name
+                    print(f"Removing model cache: {model}")
+                    if cache_path.exists():
+                        import shutil
+                        shutil.rmtree(cache_path)
+                        print(f"  Removed: {cache_path}")
+                        cleanup_performed = True
+                    else:
+                        print(f"  Not found: {cache_path}")
+                else:
+                    print(f"Model cache not found: {model}")
+            else:
+                print("No model specified in recipe")
+
+            print()
+            if cleanup_performed:
+                print("Cleanup complete.")
+            else:
+                print("Nothing to clean up.")
+
+        return 0
 
     # --- Run Phase ---
     if args.build_only or args.download_only:
