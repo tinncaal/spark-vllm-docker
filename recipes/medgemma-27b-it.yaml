@@ -1,0 +1,45 @@
+# Recipe: MedGemma-27B-IT
+# Google's MedGemma 27B Instruct model for medical domain tasks
+
+recipe_version: "1"
+name: MedGemma-27B-IT
+description: vLLM serving google/medgemma-27b-it for medical domain tasks
+
+# HuggingFace model to download (optional, for --download-model)
+model: google/medgemma-27b-it
+
+# Container image to use
+container: vllm-node
+
+# Mods
+# mods:
+
+# Default settings (can be overridden via CLI)
+defaults:
+  port: 8000
+  host: 0.0.0.0
+  tensor_parallel: 2
+  gpu_memory_utilization: 0.8
+  max_model_len: 262144
+  max_num_batched_tokens: 8192
+
+# Environment variables
+env: {}
+
+# The vLLM serve command template
+command: |
+  vllm serve google/medgemma-27b-it  \
+    --max-model-len {max_model_len} \
+    --gpu-memory-utilization {gpu_memory_utilization} \
+    --port {port} \
+    --host {host} \
+    --load-format safetensors \
+    --enable-prefix-caching \
+    --enable-auto-tool-choice \
+    --tool-call-parser gemma4 \
+    --reasoning-parser gemma4 \
+    --quantization fp8 \
+    --kv-cache-dtype fp8 \
+    --max-num-batched-tokens {max_num_batched_tokens} \
+    -tp {tensor_parallel} --distributed-executor-backend ray
+

@@ -10,6 +10,7 @@ recipes=(
     qwen3.8-flash-next-nvfp4-solo
     qwen3.8-27b-nvfp4-dflash2
     qwen3-coder-next-fp8
+    medgemma-27b-it
 )
 
 printf 'Available recipes:\n'
@@ -31,7 +32,7 @@ while true; do
         exit 0
     fi
 
-    if [[ "$selection" =~ ^[1-6]$ ]]; then
+    if [[ "$selection" =~ ^[1-7]$ ]]; then
         recipe="${recipes[selection - 1]}"
         exec "$SCRIPT_DIR/run-recipe.sh" "$recipe"
     fi
