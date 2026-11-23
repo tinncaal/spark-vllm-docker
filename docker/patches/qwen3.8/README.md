@@ -40,7 +40,7 @@ The vLLM order is:
 13. [#65182](https://github.com/vllm-project/vllm/pull/65182): reuse MRV2's
     persistent Mamba2 aligned state indices and accepted-token buffers as CUDA
     graph inputs, avoiding redundant metadata copies. Frozen at
-    `14d3984b7118db638a188bc4f20b79c0bacfb232`, with upstream aliasing tests.
+    `26490d2c7b9646bb722e20873e0127a52f10417d`, with upstream aliasing tests.
 
 Disk-offloaded PLE tables from
 [#59958](https://github.com/vllm-project/vllm/pull/59958) are supplied by upstream
@@ -70,6 +70,30 @@ Canonical NVFP4 W4A4 MoE from
 upstream commit `397b9607c83cf201f3c44684c555c3698869b6bd`.
 
 ## Integration and refresh
+
+On November 23 the complete series applied to vLLM
+`179ebd9896cff5fddc27f622649ff4c99ed5c733` and FlashInfer
+`560d7e296484ce898d1ff508a02916f51ad2287d` from clean source archives.
+All eleven vendored PR heads match their patch headers. vLLM #59021 and
+#60646 closed without merging. Patch 10 still supplies independent unquantized
+linear selection, and patches 16 and 17 still use the CSF decoder from patch 14.
+The separate Python authentication backport tracks closed, unmerged #58028 at
+`ab14efdfba010131813212021363282d1b41f2e3`.
+
+The selected FlashInfer already includes the output fix from #9765. The
+shared cuDNN patcher skips that source and lifts the cap from vLLM #68566 on
+the selected vLLM source. The CUDA-on-WSL guard is already present in vLLM.
+All 40 regular-series tests passed with CPU Torch and NumPy.
+
+On November 21 the regular series was replayed on vLLM
+`a5a902d02328e48493775ed75e352059e9d3b3b0` and FlashInfer
+`9bd0a68c94687ad920d2de04284370397a073798`. All vendored PR heads still
+match their patch headers. Closed vLLM #60646 still supplies the CSF decoder.
+The sparse draft vocabulary and SM12x MXFP8 patches were refreshed against
+the new source. The local cuBLASLt patch keeps FlashInfer's policy and tactic
+pool cache identity, compares normalized tactics across ranks on a cache hit,
+and returns the original rank-local tactics. The #58028 middleware adaptation
+preserves Starlette's segment-aware route lookup on newer vLLM revisions.
 
 The November 16 refresh fixes the FlashInfer patch conflict reproduced in
 pipeline 398, job 733, on `a2e3d1e7075edf57c87248c63f206c3a3b87a185`.
