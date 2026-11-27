@@ -34,7 +34,11 @@ while true; do
 
     if [[ "$selection" =~ ^[1-7]$ ]]; then
         recipe="${recipes[selection - 1]}"
-        exec "$SCRIPT_DIR/run-recipe.sh" "$recipe"
+        extra_args=()
+        if [[ -n "${HF_TOKEN:-}" ]]; then
+            extra_args+=(-e "HF_TOKEN=$HF_TOKEN")
+        fi
+        exec "$SCRIPT_DIR/run-recipe.sh" "$recipe" ${extra_args[@]+"${extra_args[@]}"}
     fi
     echo "Invalid selection. Choose a number from 0 to ${#recipes[@]}."
 done
